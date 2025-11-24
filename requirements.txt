@@ -1,0 +1,21 @@
+# UI
+PyQt6
+PyQt6-WebEngine
+matplotlib
+
+# Data Handling
+pandas
+numpy
+sodapy
+SQLAlchemy
+
+# Machine Learning & Stats
+scikit-learn
+scipy
+
+# Utils
+requests
+reportlab
+xlsxwriter
+folium
+python-dotenv
