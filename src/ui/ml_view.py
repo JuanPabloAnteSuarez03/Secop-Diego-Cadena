@@ -1,12 +1,13 @@
 import sys
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLabel, QFrame, QComboBox, QDoubleSpinBox, QMessageBox,
-                             QTextEdit, QProgressBar)
+                             QTextEdit, QProgressBar, QDialog)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
 from src.services.ml_engine import MotorIA
+from src.services.monte_carlo import MotorMonteCarlo
 
 class WorkerEntrenamiento(QThread):
     """Hilo para entrenar el modelo sin congelar la UI."""
@@ -27,6 +28,102 @@ class WorkerEntrenamiento(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+class WorkerMonteCarlo(QThread):
+    """Hilo para simulación Monte Carlo (evita freeze de UI)."""
+    finalizado = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, motor_mc, presupuesto, duracion):
+        super().__init__()
+        self.motor_mc = motor_mc
+        self.presupuesto = presupuesto
+        self.duracion = duracion
+
+    def run(self):
+        try:
+            res = self.motor_mc.simular(self.presupuesto, self.duracion)
+            self.finalizado.emit(res)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class DialogoMonteCarlo(QDialog):
+    """Ventana emergente para resultados de Simulación."""
+    def __init__(self, presupuesto, duracion):
+        super().__init__()
+        self.setWindowTitle("Simulación de Flujo de Caja (Monte Carlo)")
+        self.setGeometry(200, 200, 800, 600)
+        self.presupuesto = presupuesto
+        self.duracion = duracion
+        self.motor_mc = MotorMonteCarlo()
+        
+        self.init_ui()
+        self.iniciar_simulacion()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        self.lbl_info = QLabel("Inicializando motor estocástico...")
+        self.lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_info.setStyleSheet("font-size: 14px; font-weight: bold; color: #555;")
+        layout.addWidget(self.lbl_info)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0) # Indeterminado (loading)
+        layout.addWidget(self.progress)
+
+        # Placeholder para la gráfica
+        self.grafica_container = QVBoxLayout()
+        layout.addLayout(self.grafica_container)
+        
+        self.txt_stats = QTextEdit()
+        self.txt_stats.setReadOnly(True)
+        self.txt_stats.setMaximumHeight(100)
+        layout.addWidget(self.txt_stats)
+        
+        self.setLayout(layout)
+
+    def iniciar_simulacion(self):
+        self.lbl_info.setText("Analizando 10.000 escenarios basados en historia real...")
+        
+        # Usar Worker para no congelar
+        self.worker = WorkerMonteCarlo(self.motor_mc, self.presupuesto, self.duracion)
+        self.worker.finalizado.connect(self.mostrar_resultados)
+        self.worker.error.connect(self.mostrar_error)
+        self.worker.start()
+
+    def mostrar_resultados(self, res):
+        self.progress.setVisible(False)
+        self.lbl_info.setText("✅ Simulación Completada.")
+        self.lbl_info.setStyleSheet("font-size: 14px; font-weight: bold; color: green;")
+
+        # Texto
+        texto = (f"📊 RESULTADOS ESTOCÁSTICOS:\n"
+                 f"• Presupuesto Inicial: ${self.presupuesto:,.0f}\n"
+                 f"• Costo Promedio Esperado: ${res['media']:,.0f}\n"
+                 f"• Escenario Pesimista (P90): ${res['p90']:,.0f}\n"
+                 f"• Probabilidad de Sobrecosto: {res['probabilidad_sobrecosto']:.1%}")
+        self.txt_stats.setText(texto)
+
+        # Gráfica
+        try:
+            # Limpiar gráfica anterior si hubiera
+            while self.grafica_container.count():
+                item = self.grafica_container.takeAt(0)
+                widget = item.widget()
+                if widget: widget.deleteLater()
+
+            fig = self.motor_mc.graficar_resultados(res, self.presupuesto)
+            canvas = FigureCanvas(fig)
+            self.grafica_container.addWidget(canvas)
+        except Exception as e:
+            self.mostrar_error(f"Error graficando: {e}")
+
+    def mostrar_error(self, error):
+        self.progress.setVisible(False)
+        self.lbl_info.setText("❌ Error en simulación")
+        self.lbl_info.setStyleSheet("color: red;")
+        self.txt_stats.setText(f"Detalle del error:\n{error}")
+
 class VistaML(QWidget):
     def __init__(self):
         super().__init__()
@@ -44,9 +141,21 @@ class VistaML(QWidget):
         col_izq.addWidget(lbl_titulo)
 
         self.btn_entrenar = QPushButton("Entrenar Modelo (Random Forest)")
-        self.btn_entrenar.setStyleSheet("padding: 10px; background-color: #2ecc71; color: white; font-weight: bold;")
+        if self.motor.entrenado:
+            self.btn_entrenar.setText("Re-entrenar Modelo (Actualizar)")
+            self.btn_entrenar.setStyleSheet("padding: 10px; background-color: #f39c12; color: white; font-weight: bold;")
+        else:
+            self.btn_entrenar.setStyleSheet("padding: 10px; background-color: #2ecc71; color: white; font-weight: bold;")
+            
         self.btn_entrenar.clicked.connect(self.iniciar_entrenamiento)
         col_izq.addWidget(self.btn_entrenar)
+
+        # Botón Eliminar Modelo
+        self.btn_eliminar = QPushButton("Eliminar Modelo Actual")
+        self.btn_eliminar.setStyleSheet("padding: 8px; background-color: #c0392b; color: white; font-weight: bold; margin-top: 5px;")
+        self.btn_eliminar.setVisible(self.motor.entrenado) # Solo visible si existe
+        self.btn_eliminar.clicked.connect(self.eliminar_modelo)
+        col_izq.addWidget(self.btn_eliminar)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -109,14 +218,22 @@ class VistaML(QWidget):
 
         col_der.addLayout(form_layout)
         
-        self.btn_predecir = QPushButton("Calcular Riesgo")
+        # Botón Predecir (Clásico)
+        self.btn_predecir = QPushButton("Calcular Riesgo (IA)")
         self.btn_predecir.setStyleSheet("padding: 10px; background-color: #3498db; color: white; font-weight: bold;")
-        self.btn_predecir.setEnabled(False) # Deshabilitado hasta entrenar
+        self.btn_predecir.setEnabled(self.motor.entrenado) # Habilitar si ya hay modelo cargado
         self.btn_predecir.clicked.connect(self.predecir)
         col_der.addWidget(self.btn_predecir)
 
-        # Resultado
-        self.lbl_resultado = QLabel("Esperando modelo...")
+        # Botón Monte Carlo (Nuevo)
+        self.btn_montecarlo = QPushButton("🎲 Simular Flujo de Caja (Monte Carlo)")
+        self.btn_montecarlo.setStyleSheet("padding: 10px; background-color: #9b59b6; color: white; font-weight: bold; margin-top: 10px;")
+        self.btn_montecarlo.clicked.connect(self.lanzar_montecarlo)
+        col_der.addWidget(self.btn_montecarlo)
+
+        # Resultado IA
+        texto_inicial = "Modelo listo (Cargado)." if self.motor.entrenado else "Esperando modelo..."
+        self.lbl_resultado = QLabel(texto_inicial)
         self.lbl_resultado.setStyleSheet("font-size: 16px; border: 1px solid #ddd; padding: 15px; border-radius: 5px;")
         self.lbl_resultado.setAlignment(Qt.AlignmentFlag.AlignCenter)
         col_der.addWidget(self.lbl_resultado)
@@ -139,6 +256,10 @@ class VistaML(QWidget):
 
     def fin_entrenamiento(self, resultados):
         self.btn_entrenar.setEnabled(True)
+        self.btn_entrenar.setText("Re-entrenar Modelo (Actualizar)")
+        self.btn_entrenar.setStyleSheet("padding: 10px; background-color: #f39c12; color: white; font-weight: bold;")
+        
+        self.btn_eliminar.setVisible(True)
         self.progress.setVisible(False)
         self.btn_predecir.setEnabled(True)
         
@@ -169,6 +290,30 @@ class VistaML(QWidget):
         self.progress.setVisible(False)
         QMessageBox.critical(self, "Error", f"Fallo en entrenamiento:\n{error}")
 
+    def eliminar_modelo(self):
+        import os
+        ruta = "data/modelo_entrenado.pkl"
+        if os.path.exists(ruta):
+            try:
+                os.remove(ruta)
+                self.motor.entrenado = False
+                self.motor.model = None # Reset
+                
+                # Reset UI
+                self.btn_predecir.setEnabled(False)
+                self.btn_eliminar.setVisible(False)
+                self.lbl_resultado.setText("Esperando modelo...")
+                self.txt_reporte.clear()
+                self.ax.clear()
+                self.canvas.draw()
+                
+                self.btn_entrenar.setText("Entrenar Modelo (Random Forest)")
+                self.btn_entrenar.setStyleSheet("padding: 10px; background-color: #2ecc71; color: white; font-weight: bold;")
+                
+                QMessageBox.information(self, "Éxito", "Modelo eliminado. El sistema ha olvidado lo aprendido.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"No se pudo eliminar: {e}")
+
     def predecir(self):
         res = self.motor.predecir_riesgo(
             presupuesto=self.spin_presupuesto.value(),
@@ -189,3 +334,13 @@ class VistaML(QWidget):
         else:
             self.lbl_resultado.setText("Error en predicción.")
 
+    def lanzar_montecarlo(self):
+        presupuesto = self.spin_presupuesto.value()
+        duracion = self.spin_duracion.value()
+        
+        if presupuesto <= 0:
+            QMessageBox.warning(self, "Aviso", "Ingrese un presupuesto válido para simular.")
+            return
+            
+        dlg = DialogoMonteCarlo(presupuesto, duracion)
+        dlg.exec()

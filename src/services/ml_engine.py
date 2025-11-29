@@ -1,10 +1,15 @@
 import pandas as pd
 import numpy as np
+import os
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from src.services.cleaner import DataCleaner
 from src.database.db_manager import GestorBaseDatos
+
+# Ruta donde se guardará el modelo
+RUTA_MODELO = os.path.join("data", "modelo_entrenado.pkl")
 
 class MotorIA:
     def __init__(self):
@@ -12,6 +17,10 @@ class MotorIA:
         self.model = RandomForestClassifier(n_estimators=100, random_state=42)
         self.entrenado = False
         self.feature_names = []
+        self.metrics = {} # Guardar métricas de la última vez
+        
+        # Intentar cargar modelo existente al iniciar
+        self.cargar_modelo()
 
     def entrenar(self):
         """
@@ -32,6 +41,10 @@ class MotorIA:
         # Split Train/Test (80% entrenamiento, 20% validación)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+        # Verificar si el modelo existe (por si fue borrado)
+        if self.model is None:
+            self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+
         # Entrenamiento
         self.model.fit(X_train, y_train)
         self.entrenado = True
@@ -40,19 +53,52 @@ class MotorIA:
         y_pred = self.model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         
-        # Feature Importance (¿Qué variables importan más?)
+        # Feature Importance
         importancias = dict(zip(self.feature_names, self.model.feature_importances_))
-        # Ordenar por importancia
         importancias = dict(sorted(importancias.items(), key=lambda item: item[1], reverse=True))
 
         print(f"✅ Modelo Entrenado. Precisión: {accuracy:.2%}")
         
-        return {
+        resultados = {
             "precision": accuracy,
             "total_datos": len(proyectos),
             "importancia_variables": importancias,
             "reporte": classification_report(y_test, y_pred, output_dict=True)
         }
+        
+        self.metrics = resultados
+        self.guardar_modelo() # Guardar automáticamente después de entrenar
+        
+        return resultados
+
+    def guardar_modelo(self):
+        """Guarda el estado actual del motor en disco."""
+        try:
+            estado = {
+                'model': self.model,
+                'encoders': self.cleaner.encoders,
+                'feature_names': self.feature_names,
+                'entrenado': self.entrenado,
+                'metrics': self.metrics
+            }
+            joblib.dump(estado, RUTA_MODELO)
+            print(f"💾 Modelo guardado en {RUTA_MODELO}")
+        except Exception as e:
+            print(f"Error guardando modelo: {e}")
+
+    def cargar_modelo(self):
+        """Intenta cargar un modelo previo del disco."""
+        if os.path.exists(RUTA_MODELO):
+            try:
+                estado = joblib.load(RUTA_MODELO)
+                self.model = estado['model']
+                self.cleaner.encoders = estado['encoders']
+                self.feature_names = estado['feature_names']
+                self.entrenado = estado['entrenado']
+                self.metrics = estado.get('metrics', {})
+                print(f"📂 Modelo cargado exitosamente. Entrenado: {self.entrenado}")
+            except Exception as e:
+                print(f"Error cargando modelo: {e}")
 
     def predecir_riesgo(self, presupuesto, duracion_dias, departamento, tipo_contrato, entidad_freq=0.01):
         """
@@ -61,14 +107,13 @@ class MotorIA:
         if not self.entrenado:
             return None
 
-        # Codificar entradas usando los encoders del cleaner (si existen)
         try:
-            # Manejo seguro de encoders (fallback a 0 si no existe la categoría)
+            # Manejo seguro de encoders
             le_depto = self.cleaner.encoders.get('departamento')
             depto_code = 0
             if le_depto:
                 try: depto_code = le_depto.transform([departamento])[0]
-                except: depto_code = 0 # Default si el depto no se conoce
+                except: depto_code = 0 
 
             le_tipo = self.cleaner.encoders.get('tipo_contrato')
             tipo_code = 0
@@ -84,10 +129,10 @@ class MotorIA:
                 'entidad_freq': entidad_freq
             }])
             
-            # Asegurar orden de columnas igual al entrenamiento
+            # Asegurar orden de columnas
             input_data = input_data[self.feature_names]
 
-            probabilidad = self.model.predict_proba(input_data)[0][1] # Probabilidad de clase 1 (Riesgo)
+            probabilidad = self.model.predict_proba(input_data)[0][1]
             clase = self.model.predict(input_data)[0]
 
             return {
@@ -98,4 +143,3 @@ class MotorIA:
         except Exception as e:
             print(f"Error en predicción: {e}")
             return None
-
