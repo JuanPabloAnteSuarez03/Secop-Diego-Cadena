@@ -1,3 +1,6 @@
 /myenv
 .env_local
 /data
+/dist
+/installer
+/build
