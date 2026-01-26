@@ -2,18 +2,16 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import date, datetime
-from sqlalchemy import create_engine, desc, func
+from sqlalchemy import create_engine, desc, func, case
 from sqlalchemy.orm import sessionmaker, joinedload
 from src.database.models import Base, Proyecto, Adicion, DatosFinancieros
-
-# Definir la ruta de la base de datos
-RUTA_DB = os.path.join("data", "base_datos_app.db")
-URL_DATABASE = f"sqlite:///{RUTA_DB}"
+from src.utils.config import Config
 
 class GestorBaseDatos:
     def __init__(self):
         """Inicializa la conexión a la base de datos."""
-        self.engine = create_engine(URL_DATABASE, echo=False)
+        # Usar ruta robusta para .exe (copia inicial a carpeta escribible del usuario)
+        self.engine = create_engine(Config.URL_DATABASE, echo=False)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         
         # Crear tablas si no existen
@@ -202,5 +200,175 @@ class GestorBaseDatos:
                 .order_by(desc(func.count(Proyecto.id)))\
                 .limit(5).all()
             return res # Lista de tuplas (Tipo, Cantidad)
+        finally:
+            session.close()
+
+    # --- MÉTODOS DE ANALÍTICA (para Dashboard) ---
+    def analytics_prorrogas_por_tipo(self, min_contratos: int = 10):
+        """
+        Retorna lista de tuplas: (tipo_contrato, total_contratos, con_modificacion)
+        Definimos "modificación" como tener al menos una adición con:
+          - tiempo_adicionado_dias > 0  OR
+          - valor_adicionado > 0
+
+        Nota: se calcula por proyecto y luego se agrega por tipo (evita dobles conteos por múltiples adiciones).
+        """
+        session = self.obtener_sesion()
+        try:
+            # Flag por proyecto: 1 si tuvo alguna modificación, 0 si no.
+            mod_flag = func.max(
+                case(
+                    (
+                        (Adicion.tiempo_adicionado_dias > 0) | (Adicion.valor_adicionado > 0),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("tiene_modificacion")
+
+            filas = (
+                session.query(Proyecto.tipo_contrato, mod_flag)
+                .outerjoin(Adicion, Adicion.proyecto_id == Proyecto.id)
+                .group_by(Proyecto.id)
+                .all()
+            )
+
+            agg = {}
+            for tipo, tiene_mod in filas:
+                key = str(tipo) if tipo is not None else "Sin tipo"
+                if key not in agg:
+                    agg[key] = [0, 0]
+                agg[key][0] += 1
+                agg[key][1] += int(tiene_mod or 0)
+
+            res = [(k, v[0], v[1]) for k, v in agg.items() if v[0] >= min_contratos]
+            res.sort(key=lambda x: (x[2] / x[1]) if x[1] else 0, reverse=True)
+            return res
+        finally:
+            session.close()
+
+    def analytics_presupuesto_vs_riesgo(self, limite: int = 10000):
+        """
+        Retorna pares (presupuesto_inicial, tiene_modificacion) para binning en Python.
+        """
+        session = self.obtener_sesion()
+        try:
+            mod_flag = func.max(
+                case(
+                    (
+                        (Adicion.tiempo_adicionado_dias > 0) | (Adicion.valor_adicionado > 0),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("tiene_modificacion")
+
+            filas = (
+                session.query(Proyecto.presupuesto_inicial, mod_flag)
+                .outerjoin(Adicion, Adicion.proyecto_id == Proyecto.id)
+                .group_by(Proyecto.id)
+                .filter(Proyecto.presupuesto_inicial.isnot(None))
+                .limit(limite)
+                .all()
+            )
+            return filas
+        finally:
+            session.close()
+
+    def analytics_top_entidades(self, min_contratos: int = 20, limite: int = 10):
+        """
+        Retorna lista de tuplas: (nombre_entidad, total_contratos, con_modificacion)
+        """
+        session = self.obtener_sesion()
+        try:
+            mod_flag = func.max(
+                case(
+                    (
+                        (Adicion.tiempo_adicionado_dias > 0) | (Adicion.valor_adicionado > 0),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("tiene_modificacion")
+
+            filas = (
+                session.query(Proyecto.nombre_entidad, mod_flag)
+                .outerjoin(Adicion, Adicion.proyecto_id == Proyecto.id)
+                .group_by(Proyecto.id)
+                .all()
+            )
+
+            agg = {}
+            for entidad, tiene_mod in filas:
+                key = str(entidad) if entidad is not None else "Sin entidad"
+                if key not in agg:
+                    agg[key] = [0, 0]
+                agg[key][0] += 1
+                agg[key][1] += int(tiene_mod or 0)
+
+            res = [(k, v[0], v[1]) for k, v in agg.items() if v[0] >= min_contratos]
+            res.sort(key=lambda x: (x[2] / x[1]) if x[1] else 0, reverse=True)
+            return res[:limite]
+        finally:
+            session.close()
+
+    def analytics_fuentes_financiacion(self):
+        """
+        Suma de fuentes de financiación (DatosFinancieros) en toda la base:
+        pgn, sgp, regalias, recursos_propios, recursos_credito.
+        Retorna dict.
+        """
+        session = self.obtener_sesion()
+        try:
+            sums = session.query(
+                func.sum(DatosFinancieros.pgn).label("pgn"),
+                func.sum(DatosFinancieros.sgp).label("sgp"),
+                func.sum(DatosFinancieros.regalias).label("regalias"),
+                func.sum(DatosFinancieros.recursos_propios).label("recursos_propios"),
+                func.sum(DatosFinancieros.recursos_credito).label("recursos_credito"),
+            ).one()
+
+            def nz(x):
+                return float(x or 0.0)
+
+            return {
+                "PGN": nz(sums.pgn),
+                "SGP": nz(sums.sgp),
+                "Regalías": nz(sums.regalias),
+                "Recursos propios": nz(sums.recursos_propios),
+                "Crédito": nz(sums.recursos_credito),
+            }
+        finally:
+            session.close()
+
+    def analytics_adiciones_por_mes(self, limite_meses: int = 36):
+        """
+        Serie de tiempo de adiciones por mes.
+        Retorna lista de tuplas: (YYYY-MM, conteo_adiciones, suma_valor_adicionado)
+
+        Nota: SQLite soporta strftime('%Y-%m', fecha).
+        """
+        session = self.obtener_sesion()
+        try:
+            mes = func.strftime("%Y-%m", Adicion.fecha).label("mes")
+            q = (
+                session.query(
+                    mes,
+                    func.count(Adicion.id).label("conteo"),
+                    func.sum(Adicion.valor_adicionado).label("suma_valor"),
+                )
+                .filter(Adicion.fecha.isnot(None))
+                .group_by(mes)
+                .order_by(mes.asc())
+            )
+
+            filas = q.all()
+            if not filas:
+                return []
+
+            if limite_meses and limite_meses > 0:
+                filas = filas[-limite_meses:]
+
+            return [(str(m), int(c or 0), float(v or 0.0)) for m, c, v in filas]
         finally:
             session.close()

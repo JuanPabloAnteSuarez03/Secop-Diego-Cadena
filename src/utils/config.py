@@ -12,6 +12,7 @@ class Config:
     
     # Base de datos
     # Copiamos una DB inicial a una carpeta escribible del usuario (mejor para .exe / instalador)
-    DB_PATH = str(ensure_user_file("data/base_datos_app.db", "base_datos_app.db"))
+    # Ojo: para SQLAlchemy/SQLite en Windows es más robusto usar forward slashes (C:/...)
+    DB_PATH = ensure_user_file("data/base_datos_app.db", "base_datos_app.db").as_posix()
     # Alias para compatibilidad
     URL_DATABASE = f"sqlite:///{DB_PATH}"
