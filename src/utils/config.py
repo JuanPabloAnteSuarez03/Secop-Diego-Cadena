@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+from src.utils.paths import ensure_user_file
+
 # Cargar variables desde .env_local (o .env)
 load_dotenv(dotenv_path=".env_local")
 
@@ -9,6 +11,7 @@ class Config:
     SECOP_API_SECRET = os.getenv("SECOP_API_SECRET")
     
     # Base de datos
-    DB_PATH = os.path.join("data", "base_datos_app.db")
-    DB_URL = f"sqlite:///{DB_PATH}"
-
+    # Copiamos una DB inicial a una carpeta escribible del usuario (mejor para .exe / instalador)
+    DB_PATH = str(ensure_user_file("data/base_datos_app.db", "base_datos_app.db"))
+    # Alias para compatibilidad
+    URL_DATABASE = f"sqlite:///{DB_PATH}"

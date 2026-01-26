@@ -292,7 +292,7 @@ class VistaML(QWidget):
 
     def eliminar_modelo(self):
         import os
-        ruta = "data/modelo_entrenado.pkl"
+        ruta = getattr(self.motor, "ruta_modelo", "data/modelo_entrenado.pkl")
         if os.path.exists(ruta):
             try:
                 os.remove(ruta)

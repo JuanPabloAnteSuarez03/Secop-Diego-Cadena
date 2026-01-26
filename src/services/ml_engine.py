@@ -7,9 +7,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from src.services.cleaner import DataCleaner
 from src.database.db_manager import GestorBaseDatos
+from src.utils.paths import ensure_user_file, user_data_dir
 
 # Ruta donde se guardará el modelo
-RUTA_MODELO = os.path.join("data", "modelo_entrenado.pkl")
+RUTA_MODELO = str(user_data_dir() / "modelo_entrenado.pkl")
 
 class MotorIA:
     def __init__(self):
@@ -21,6 +22,10 @@ class MotorIA:
         
         # Intentar cargar modelo existente al iniciar
         self.cargar_modelo()
+
+    @property
+    def ruta_modelo(self) -> str:
+        return RUTA_MODELO
 
     def entrenar(self):
         """
@@ -88,6 +93,9 @@ class MotorIA:
 
     def cargar_modelo(self):
         """Intenta cargar un modelo previo del disco."""
+        # Si viene empaquetado, copiamos un modelo inicial (si existe) a la carpeta del usuario
+        # para que sea escribible y persistente.
+        ensure_user_file("data/modelo_entrenado.pkl", "modelo_entrenado.pkl")
         if os.path.exists(RUTA_MODELO):
             try:
                 estado = joblib.load(RUTA_MODELO)

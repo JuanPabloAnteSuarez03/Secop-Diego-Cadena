@@ -57,16 +57,7 @@ class Dashboard(QWidget):
         
         layout.addLayout(graficos_layout)
 
-        # --- Tabla Resumen (Abajo) ---
-        lbl_tabla = QLabel("Últimos Proyectos Registrados")
-        lbl_tabla.setStyleSheet("font-size: 16px; font-weight: bold; margin-top: 10px;")
-        layout.addWidget(lbl_tabla)
-
-        self.tabla = QTableWidget()
-        self.tabla.setColumnCount(5)
-        self.tabla.setHorizontalHeaderLabels(["ID", "Entidad", "Objeto", "Presupuesto", "Depto"])
-        self.tabla.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.tabla)
+        # Tabla de "Últimos Proyectos Registrados" eliminada por solicitud.
 
         self.setLayout(layout)
 
@@ -151,12 +142,5 @@ class Dashboard(QWidget):
             print(f"Error grafica tipos: {e}")
         self.canvas2.draw()
 
-        # 5. Llenar Tabla
-        self.tabla.setRowCount(len(df))
-        for i, row in df.iterrows():
-            self.tabla.setItem(i, 0, QTableWidgetItem(str(row['id'])))
-            self.tabla.setItem(i, 1, QTableWidgetItem(str(row['entidad'])))
-            self.tabla.setItem(i, 2, QTableWidgetItem(str(row['objeto'])[:50] + "..."))
-            self.tabla.setItem(i, 3, QTableWidgetItem(f"${row['presupuesto']:,.0f}"))
-            self.tabla.setItem(i, 4, QTableWidgetItem(str(row['depto'])))
+        # (Tabla eliminada)
 
