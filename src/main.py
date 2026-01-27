@@ -12,13 +12,16 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPalette
+from PyQt6.QtGui import QIcon
+
+from src.utils.paths import resource_path
 
 def _crear_splash() -> QSplashScreen:
     """
     Splash simple (sin archivos externos) para dar feedback mientras cargan imports pesados.
     Nota: no puede cubrir el tiempo antes de que Python arranque, pero sí el de imports/montaje UI.
     """
-    w, h = 520, 220
+    w, h = 520, 240
     pixmap = QPixmap(w, h)
     pixmap.fill(QColor("#f8f9fa"))
 
@@ -26,15 +29,23 @@ def _crear_splash() -> QSplashScreen:
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(QColor("#2c3e50"))
 
+    # Logo (si existe)
+    logo_png = resource_path("src", "ui", "assets", "logo_univalle.png")
+    if logo_png.exists():
+        logo = QPixmap(str(logo_png))
+        if not logo.isNull():
+            logo = logo.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            p.drawPixmap(20, 24, logo)
+
     title_font = QFont("Segoe UI", 16)
     title_font.setBold(True)
     p.setFont(title_font)
-    p.drawText(20, 70, "SistemaContratos")
+    p.drawText(100, 58, "SistemaContratos")
 
     sub_font = QFont("Segoe UI", 10)
     p.setFont(sub_font)
     p.setPen(QColor("#7f8c8d"))
-    p.drawText(20, 100, "Iniciando aplicación...")
+    p.drawText(100, 86, "Iniciando aplicación...")
     p.end()
 
     splash = QSplashScreen(pixmap)
@@ -91,6 +102,15 @@ def main():
     # Forzar tema claro (no depende del modo oscuro del sistema)
     _forzar_tema_claro(app)
 
+    # Icono de la aplicación (ventana + taskbar)
+    # Preferimos .ico si existe; fallback a PNG.
+    ico = resource_path("src", "ui", "assets", "app.ico")
+    png = resource_path("src", "ui", "assets", "logo_univalle.png")
+    if ico.exists():
+        app.setWindowIcon(QIcon(str(ico)))
+    elif png.exists():
+        app.setWindowIcon(QIcon(str(png)))
+
     splash = _crear_splash()
     splash.show()
     splash.showMessage("Cargando módulos...", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft, QColor("#2c3e50"))
@@ -114,6 +134,8 @@ def main():
             super().__init__()
             self.setWindowTitle("Sistema de Inteligencia de Contratos - Obras Civiles")
             self.setGeometry(100, 100, 1200, 800)
+            # Asegurar icono también a nivel de ventana
+            self.setWindowIcon(app.windowIcon())
 
             # Widget central con Pestañas
             self.tabs = QTabWidget()
