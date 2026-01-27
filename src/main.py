@@ -11,6 +11,7 @@ if __package__ is None or __package__ == "":
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPalette
 
 def _crear_splash() -> QSplashScreen:
     """
@@ -41,11 +42,54 @@ def _crear_splash() -> QSplashScreen:
     return splash
 
 
+def _forzar_tema_claro(app: QApplication) -> None:
+    """
+    Fuerza un tema claro independiente del modo oscuro del SO.
+    Esto evita que Windows "Dark Mode" cambie la paleta de la app.
+    """
+    app.setStyle("Fusion")
+
+    pal = QPalette()
+    # Base UI
+    pal.setColor(QPalette.ColorRole.Window, QColor("#f8f9fa"))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor("#2c3e50"))
+    pal.setColor(QPalette.ColorRole.Base, QColor("#ffffff"))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor("#f2f4f7"))
+    pal.setColor(QPalette.ColorRole.Text, QColor("#2c3e50"))
+    pal.setColor(QPalette.ColorRole.Button, QColor("#ecf0f1"))
+    pal.setColor(QPalette.ColorRole.ButtonText, QColor("#2c3e50"))
+
+    # Accents / selection
+    pal.setColor(QPalette.ColorRole.Highlight, QColor("#3498db"))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+
+    # Links / tooltips
+    pal.setColor(QPalette.ColorRole.Link, QColor("#2e86c1"))
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#ffffff"))
+    pal.setColor(QPalette.ColorRole.ToolTipText, QColor("#2c3e50"))
+
+    # Disabled (en PyQt6: Disabled es un ColorGroup, no un ColorRole)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#95a5a6"))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#95a5a6"))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor("#95a5a6"))
+
+    app.setPalette(pal)
+
+    # Asegurar fondos claros también vía stylesheet (cubre widgets que ignoran paleta en algunos estilos)
+    app.setStyleSheet(
+        """
+        QWidget { background-color: #f8f9fa; color: #2c3e50; }
+        QFrame { background-color: transparent; }
+        QToolTip { background-color: #ffffff; color: #2c3e50; border: 1px solid #bdc3c7; }
+        """
+    )
+
+
 def main():
     app = QApplication(sys.argv)
-    
-    # Aplicar un estilo visual básico (Fusion)
-    app.setStyle("Fusion")
+
+    # Forzar tema claro (no depende del modo oscuro del sistema)
+    _forzar_tema_claro(app)
 
     splash = _crear_splash()
     splash.show()
