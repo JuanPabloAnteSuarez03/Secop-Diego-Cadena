@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
     QMessageBox,
+    QScrollArea,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt
 
@@ -43,7 +45,17 @@ class VistaFinanciera(QWidget):
         self.recalcular()
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        # Para que no se “corte” en pantallas pequeñas o con DPI alto, usamos scroll.
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
 
         # --- Estilo local (mejora legibilidad en Windows/Fusion) ---
         assets_dir = Path(__file__).resolve().parent / "assets"
@@ -59,6 +71,7 @@ class VistaFinanciera(QWidget):
                 border: 1px solid #bdc3c7;
                 border-radius: 6px;
                 padding: 6px 10px;
+                min-height: 34px;
             }}
 
             QLineEdit:hover, QComboBox:hover, QAbstractSpinBox:hover {{
@@ -127,6 +140,11 @@ class VistaFinanciera(QWidget):
                 width: 10px;
                 height: 10px;
             }}
+
+            /* Botones: altura consistente para evitar recortes con escalado */
+            QPushButton {{
+                min-height: 34px;
+            }}
             """
         )
 
@@ -168,59 +186,77 @@ class VistaFinanciera(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
         grid.setVerticalSpacing(10)
+        # Cols: etiqueta / input / etiqueta / input (+ botón en col 4 cuando aplique)
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 4)
+        grid.setColumnStretch(2, 3)
+        grid.setColumnStretch(3, 4)
+        grid.setColumnStretch(4, 2)
+
+        def mk_label(text: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setWordWrap(True)  # evita cortes: se parte en 2 líneas si es necesario
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            return lbl
 
         # Valor de venta
-        grid.addWidget(QLabel("Valor de venta (ingreso) ($):"), 0, 0)
+        grid.addWidget(mk_label("Valor de venta (ingreso) ($):"), 0, 0)
         self.spin_venta = QDoubleSpinBox()
         self.spin_venta.setRange(0, 1e13)
         self.spin_venta.setDecimals(0)
         self.spin_venta.setValue(100_000_000)
         self.spin_venta.valueChanged.connect(self.recalcular)
+        self.spin_venta.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_venta, 0, 1)
 
         # % costo sobre venta
-        grid.addWidget(QLabel("% costo sobre venta:"), 1, 0)
+        grid.addWidget(mk_label("% costo sobre venta:"), 1, 0)
         self.spin_costo_pct = QDoubleSpinBox()
         self.spin_costo_pct.setRange(0, 150)
         self.spin_costo_pct.setDecimals(2)
         self.spin_costo_pct.setSuffix(" %")
         self.spin_costo_pct.setValue(80.0)
         self.spin_costo_pct.valueChanged.connect(self.recalcular)
+        self.spin_costo_pct.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_costo_pct, 1, 1)
 
         # Modo capital
-        grid.addWidget(QLabel("Capital (modo):"), 2, 0)
+        grid.addWidget(mk_label("Capital (modo):"), 2, 0)
         self.combo_capital_modo = QComboBox()
         self.combo_capital_modo.addItems(["Porcentaje del costo", "Monto ($)"])
         self.combo_capital_modo.currentIndexChanged.connect(self._on_capital_mode_changed)
+        self.combo_capital_modo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.combo_capital_modo, 2, 1)
 
         # Capital % del costo
-        grid.addWidget(QLabel("Capital (% del costo):"), 3, 0)
+        grid.addWidget(mk_label("Capital (% del costo):"), 3, 0)
         self.spin_capital_pct = QDoubleSpinBox()
         self.spin_capital_pct.setRange(0, 100)
         self.spin_capital_pct.setDecimals(2)
         self.spin_capital_pct.setSuffix(" %")
         self.spin_capital_pct.setValue(20.0)
         self.spin_capital_pct.valueChanged.connect(self.recalcular)
+        self.spin_capital_pct.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_capital_pct, 3, 1)
 
         # Capital monto
-        grid.addWidget(QLabel("Capital (monto) ($):"), 4, 0)
+        grid.addWidget(mk_label("Capital (monto) ($):"), 4, 0)
         self.spin_capital_monto = QDoubleSpinBox()
         self.spin_capital_monto.setRange(0, 1e13)
         self.spin_capital_monto.setDecimals(0)
         self.spin_capital_monto.setValue(20_000_000)
         self.spin_capital_monto.valueChanged.connect(self.recalcular)
+        self.spin_capital_monto.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_capital_monto, 4, 1)
 
         # Crédito principal (auto, editable)
-        grid.addWidget(QLabel("Crédito (principal) ($):"), 5, 0)
+        grid.addWidget(mk_label("Crédito (principal) ($):"), 5, 0)
         self.spin_credito = QDoubleSpinBox()
         self.spin_credito.setRange(0, 1e13)
         self.spin_credito.setDecimals(0)
         self.spin_credito.setValue(60_000_000)
         self.spin_credito.valueChanged.connect(self.recalcular)
+        self.spin_credito.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_credito, 5, 1)
 
         # Botón sugerir crédito = costo - capital
@@ -251,17 +287,19 @@ class VistaFinanciera(QWidget):
         grid.addWidget(self.lbl_sugerencia, 6, 1, 1, 3)
 
         # Tasa anual
-        grid.addWidget(QLabel("Tasa de interés (%):"), 0, 2)
+        grid.addWidget(mk_label("Tasa de interés (%):"), 0, 2)
         self.spin_tasa = QDoubleSpinBox()
         self.spin_tasa.setRange(0, 200)
         self.spin_tasa.setDecimals(2)
         self.spin_tasa.setSuffix(" %")
         self.spin_tasa.setValue(18.0)
         self.spin_tasa.valueChanged.connect(self.recalcular)
+        self.spin_tasa.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         self.combo_tasa_tipo = QComboBox()
         self.combo_tasa_tipo.addItems(["Anual", "Mensual"])
         self.combo_tasa_tipo.currentIndexChanged.connect(self.recalcular)
+        self.combo_tasa_tipo.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         tasa_container = QWidget()
         tasa_layout = QHBoxLayout(tasa_container)
@@ -272,19 +310,21 @@ class VistaFinanciera(QWidget):
         grid.addWidget(tasa_container, 0, 3)
 
         # Plazo meses
-        grid.addWidget(QLabel("Plazo (meses):"), 1, 2)
+        grid.addWidget(mk_label("Plazo (meses):"), 1, 2)
         self.spin_plazo = QDoubleSpinBox()
         self.spin_plazo.setRange(1, 600)
         self.spin_plazo.setDecimals(0)
         self.spin_plazo.setValue(12)
         self.spin_plazo.valueChanged.connect(self.recalcular)
+        self.spin_plazo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.spin_plazo, 1, 3)
 
         # Tipo crédito
-        grid.addWidget(QLabel("Tipo de crédito:"), 2, 2)
+        grid.addWidget(mk_label("Tipo de crédito:"), 2, 2)
         self.combo_tipo = QComboBox()
         self.combo_tipo.addItems(["Pago al final (bullet)", "Cuotas fijas (amortizado)"])
         self.combo_tipo.currentIndexChanged.connect(self.recalcular)
+        self.combo_tipo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         grid.addWidget(self.combo_tipo, 2, 3)
 
         form.setLayout(grid)
@@ -311,7 +351,9 @@ class VistaFinanciera(QWidget):
         layout.addWidget(self.card_resultados)
 
         layout.addStretch()
-        self.setLayout(layout)
+        scroll.setWidget(content)
+        root.addWidget(scroll)
+        self.setLayout(root)
 
         self._on_capital_mode_changed()
 
